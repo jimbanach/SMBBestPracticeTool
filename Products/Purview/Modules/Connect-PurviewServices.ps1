@@ -22,9 +22,10 @@
     UPN of the customer tenant admin (or partner GDAP admin) used for sign-in.
 
 .PARAMETER NeedsSharePoint
-    Connect to SharePoint Online. The admin URL is auto-derived from the
-    tenant's initial domain after Exchange Online is connected, unless
-    -SharePointAdminUrl is passed as an override.
+    Connect to SharePoint Online. The admin URL is auto-derived from
+    -DelegatedOrganization (when present) or the onmicrosoft.com suffix of
+    -TenantAdminUpn before other services connect. Pass -SharePointAdminUrl
+    to override derivation; custom-domain UPNs without explicit URL will error.
 
 .PARAMETER SharePointAdminUrl
     Optional override for the SharePoint admin centre URL
@@ -194,15 +195,20 @@ function Ensure-RequiredModule {
 # ---------------------------------------------------------------------------
 # Module checks (auto-install on demand)
 # ---------------------------------------------------------------------------
-Ensure-RequiredModule -Name 'ExchangeOnlineManagement' `
-    -RequiredCmdlet 'Connect-ExchangeOnline' `
-    -AutoInstall:$AutoInstallModules
-
+# SPO is checked and imported first so its Microsoft.Identity.Client.dll is
+# the first MSAL version to enter the .NET AppDomain. EXO, IPPS, and Graph
+# each bundle a different version; whichever loads first wins the .NET
+# assembly-binding race and Connect-SPOService fails with "manifest does not
+# match" on every subsequent run.
 if ($NeedsSharePoint) {
     Ensure-RequiredModule -Name 'Microsoft.Online.SharePoint.PowerShell' `
         -RequiredCmdlet 'Connect-SPOService' `
         -AutoInstall:$AutoInstallModules
 }
+
+Ensure-RequiredModule -Name 'ExchangeOnlineManagement' `
+    -RequiredCmdlet 'Connect-ExchangeOnline' `
+    -AutoInstall:$AutoInstallModules
 
 if ($ConnectGraph) {
     # Connect-MgGraph / Get-MgContext live in Microsoft.Graph.Authentication.
@@ -216,66 +222,28 @@ if ($ConnectGraph) {
 }
 
 # ---------------------------------------------------------------------------
-# Exchange Online
-# ---------------------------------------------------------------------------
-$exoConnected = $false
-try {
-    $info = Get-ConnectionInformation -ErrorAction Stop |
-        Where-Object { $_.State -eq 'Connected' -and $_.TokenStatus -eq 'Active' -and $_.Name -like 'ExchangeOnline*' }
-    if ($info) { $exoConnected = $true }
-} catch { $exoConnected = $false }
-
-if ($exoConnected) {
-    Write-Host "Exchange Online: existing session reused." -ForegroundColor DarkGray
-} else {
-    Write-Host "Connecting to Exchange Online as $TenantAdminUpn..." -ForegroundColor Cyan
-    $exoArgs = @{ UserPrincipalName = $TenantAdminUpn; ShowBanner = $false }
-    if ($DelegatedOrganization) { $exoArgs['DelegatedOrganization'] = $DelegatedOrganization }
-    Connect-ExchangeOnline @exoArgs
-}
-
-# ---------------------------------------------------------------------------
-# Security & Compliance (IPPS) — separate connection from EXO
-# ---------------------------------------------------------------------------
-$ippsConnected = $false
-try {
-    $info = Get-ConnectionInformation -ErrorAction Stop |
-        Where-Object { $_.State -eq 'Connected' -and $_.TokenStatus -eq 'Active' -and $_.ConnectionUri -like '*compliance.protection.outlook.com*' }
-    if ($info) { $ippsConnected = $true }
-} catch { $ippsConnected = $false }
-
-if ($ippsConnected) {
-    Write-Host "Security & Compliance (IPPS): existing session reused." -ForegroundColor DarkGray
-} else {
-    Write-Host "Connecting to Security & Compliance Center..." -ForegroundColor Cyan
-    $ippsArgs = @{ UserPrincipalName = $TenantAdminUpn; ShowBanner = $false }
-    if ($DelegatedOrganization) { $ippsArgs['DelegatedOrganization'] = $DelegatedOrganization }
-    Connect-IPPSSession @ippsArgs
-}
-
-# ---------------------------------------------------------------------------
 # SharePoint Online (with auto-derivation of admin URL)
 # ---------------------------------------------------------------------------
 $resolvedSpoUrl = $null
 
 if ($NeedsSharePoint) {
     if (-not $SharePointAdminUrl) {
-        Write-Host "Resolving SharePoint admin URL from tenant initial domain..." -ForegroundColor Cyan
-        try {
-            # Get-AcceptedDomain runs in the EXO session we just connected.
-            # The InitialDomain (always <tenant>.onmicrosoft.com) is the
-            # reliable basis for the SPO admin URL.
-            $initial = Get-AcceptedDomain |
-                Where-Object { $_.InitialDomain } |
-                Select-Object -First 1
-            if (-not $initial) {
-                throw "No initial (.onmicrosoft.com) domain found via Get-AcceptedDomain."
-            }
-            $tenantPrefix = ($initial.DomainName -split '\.')[0]
-            $SharePointAdminUrl = "https://$tenantPrefix-admin.sharepoint.com"
+        # Derive the SPO admin URL from DelegatedOrganization (GDAP) or the
+        # onmicrosoft.com suffix of TenantAdminUpn. This removes the dependency
+        # on Get-AcceptedDomain (which requires an active EXO session) so SPO
+        # can connect before EXO loads its MSAL into the AppDomain.
+        $spoSourceDomain = if ($DelegatedOrganization) {
+            $DelegatedOrganization
+        } else {
+            ($TenantAdminUpn -split '@')[-1]
+        }
+
+        Write-Host "Resolving SharePoint admin URL..." -ForegroundColor Cyan
+        if ($spoSourceDomain -match '^([^.]+)\.onmicrosoft\.com$') {
+            $SharePointAdminUrl = "https://$($Matches[1])-admin.sharepoint.com"
             Write-Host "  Resolved: $SharePointAdminUrl" -ForegroundColor Green
-        } catch {
-            throw "Could not auto-derive SharePoint admin URL: $($_.Exception.Message)`nPass -SharePointAdminUrl explicitly (e.g. https://<tenant>-admin.sharepoint.com)."
+        } else {
+            throw "Could not auto-derive SharePoint admin URL from '$spoSourceDomain'.`nAuto-derivation requires the admin UPN or -DelegatedOrganization to use an onmicrosoft.com domain.`nPass -SharePointAdminUrl explicitly (e.g. https://<tenant>-admin.sharepoint.com)."
         }
     } else {
         Write-Host "Using supplied SharePoint admin URL: $SharePointAdminUrl" -ForegroundColor DarkGray
@@ -314,7 +282,8 @@ if ($NeedsSharePoint) {
             Connect-SPOService -Url $SharePointAdminUrl -ErrorAction Stop
         } catch {
             $errMsg = $_.Exception.Message
-            $isOAuthErr = $errMsg -match 'No valid OAuth'
+            $isOAuthErr     = $errMsg -match 'No valid OAuth'
+            $isMsalConflict = $errMsg -match 'Microsoft\.Identity\.Client,\s*Version='
 
             $retried = $false
             if ($isOAuthErr -and $isCore) {
@@ -333,7 +302,13 @@ if ($NeedsSharePoint) {
 
             if (-not $retried) {
                 $hints = @()
-                if ($isOAuthErr) {
+                if ($isMsalConflict) {
+                    $hints += "* MSAL assembly conflict: another module loaded in this PowerShell session (ExchangeOnlineManagement, Microsoft.Graph, Az.Accounts, or PnP.PowerShell) bound a different Microsoft.Identity.Client.dll before the SPO module could load its required version."
+                    $hints += "  Fix: open a fresh pwsh window and run this script before importing any other modules — or connect to SPO manually first:"
+                    $hints += "      Import-Module Microsoft.Online.SharePoint.PowerShell -DisableNameChecking"
+                    $hints += "      Connect-SPOService -Url $SharePointAdminUrl"
+                    $hints += "  Updating the SPO module will NOT fix this error."
+                } elseif ($isOAuthErr) {
                     $hints += "* The sign-in account ($TenantAdminUpn) must hold the SharePoint Administrator (or Global Administrator) role on the customer tenant."
                     $hints += "* Make sure the browser sign-in pop-up is allowed and not blocked by your default browser, and complete MFA if prompted."
                     $hints += "* You can pre-authenticate manually first, then re-run this script: Connect-SPOService -Url $SharePointAdminUrl"
@@ -341,17 +316,19 @@ if ($NeedsSharePoint) {
 
                 $fallbackModuleMissing = $errMsg -match 'no valid module file was found' -or `
                                          $errMsg -match "module .* was not loaded"
-                if ($isCore -and $fallbackModuleMissing) {
-                    $hints += "* The Windows PowerShell 5.1 fallback could not find 'Microsoft.Online.SharePoint.PowerShell'."
-                    $hints += "  PS 7's 'Install-Module' installs to the PS 7 module path only; the fallback runs under PS 5.1 and needs the module in its path too."
-                    $hints += "  Fix: open Windows PowerShell 5.1 (powershell.exe) once and run:"
-                    $hints += "      Install-Module Microsoft.Online.SharePoint.PowerShell -Scope CurrentUser -Force -AllowClobber"
-                    $hints += "  Then re-run this script from pwsh."
-                } elseif ($isCore) {
-                    $hints += "* If the SPO module is outdated, update it: Update-Module Microsoft.Online.SharePoint.PowerShell -Force"
-                    $hints += "  (Do NOT downgrade to Windows PowerShell 5.1 to run this script — PS 5.1 is not supported by this toolkit.)"
-                } else {
-                    $hints += "* If your SPO module is old, run: Update-Module Microsoft.Online.SharePoint.PowerShell -Force"
+                if (-not $isMsalConflict) {
+                    if ($isCore -and $fallbackModuleMissing) {
+                        $hints += "* The Windows PowerShell 5.1 fallback could not find 'Microsoft.Online.SharePoint.PowerShell'."
+                        $hints += "  PS 7's 'Install-Module' installs to the PS 7 module path only; the fallback runs under PS 5.1 and needs the module in its path too."
+                        $hints += "  Fix: open Windows PowerShell 5.1 (powershell.exe) once and run:"
+                        $hints += "      Install-Module Microsoft.Online.SharePoint.PowerShell -Scope CurrentUser -Force -AllowClobber"
+                        $hints += "  Then re-run this script from pwsh."
+                    } elseif ($isCore) {
+                        $hints += "* If the SPO module is outdated, update it: Update-Module Microsoft.Online.SharePoint.PowerShell -Force"
+                        $hints += "  (Do NOT downgrade to Windows PowerShell 5.1 to run this script — PS 5.1 is not supported by this toolkit.)"
+                    } else {
+                        $hints += "* If your SPO module is old, run: Update-Module Microsoft.Online.SharePoint.PowerShell -Force"
+                    }
                 }
 
                 $msg = "Connect-SPOService failed: $errMsg"
@@ -360,6 +337,44 @@ if ($NeedsSharePoint) {
             }
         }
     }
+}
+
+# ---------------------------------------------------------------------------
+# Exchange Online
+# ---------------------------------------------------------------------------
+$exoConnected = $false
+try {
+    $info = Get-ConnectionInformation -ErrorAction Stop |
+        Where-Object { $_.State -eq 'Connected' -and $_.TokenStatus -eq 'Active' -and $_.Name -like 'ExchangeOnline*' }
+    if ($info) { $exoConnected = $true }
+} catch { $exoConnected = $false }
+
+if ($exoConnected) {
+    Write-Host "Exchange Online: existing session reused." -ForegroundColor DarkGray
+} else {
+    Write-Host "Connecting to Exchange Online as $TenantAdminUpn..." -ForegroundColor Cyan
+    $exoArgs = @{ UserPrincipalName = $TenantAdminUpn; ShowBanner = $false }
+    if ($DelegatedOrganization) { $exoArgs['DelegatedOrganization'] = $DelegatedOrganization }
+    Connect-ExchangeOnline @exoArgs
+}
+
+# ---------------------------------------------------------------------------
+# Security & Compliance (IPPS) — separate connection from EXO
+# ---------------------------------------------------------------------------
+$ippsConnected = $false
+try {
+    $info = Get-ConnectionInformation -ErrorAction Stop |
+        Where-Object { $_.State -eq 'Connected' -and $_.TokenStatus -eq 'Active' -and $_.ConnectionUri -like '*compliance.protection.outlook.com*' }
+    if ($info) { $ippsConnected = $true }
+} catch { $ippsConnected = $false }
+
+if ($ippsConnected) {
+    Write-Host "Security & Compliance (IPPS): existing session reused." -ForegroundColor DarkGray
+} else {
+    Write-Host "Connecting to Security & Compliance Center..." -ForegroundColor Cyan
+    $ippsArgs = @{ UserPrincipalName = $TenantAdminUpn; ShowBanner = $false }
+    if ($DelegatedOrganization) { $ippsArgs['DelegatedOrganization'] = $DelegatedOrganization }
+    Connect-IPPSSession @ippsArgs
 }
 
 # ---------------------------------------------------------------------------
