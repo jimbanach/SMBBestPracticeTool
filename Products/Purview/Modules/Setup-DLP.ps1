@@ -222,7 +222,20 @@ foreach ($cfg in $Config.DlpPolicies) {
     }
 
     if ($BPOnly -and ($script:E5OnlyWorkloads -contains $cfg.Workload)) {
-        throw "DLP policy '$($cfg.Name)' targets workload '$($cfg.Workload)', which requires Microsoft 365 E5 / Purview Suite. Remove this policy from PurviewConfig.psd1 or omit -BPOnly."
+        Write-Warning "Skipping DLP policy '$($cfg.Name)' — workload '$($cfg.Workload)' requires E5 / Purview Suite (tenant licensing does not include it)."
+        continue
+    }
+
+    # Probe for Endpoint DLP cmdlet support before attempting Endpoint-family
+    # policy creation. The parameter is absent when the tenant has not completed
+    # device onboarding or does not hold the required license, even if the
+    # New-DlpCompliancePolicy cmdlet itself is available in the IPPS session.
+    if ($cfg.Workload -in @('Endpoint','Devices','EndpointDevices','EndpointDlp')) {
+        $cmd = Get-Command New-DlpCompliancePolicy -ErrorAction SilentlyContinue
+        if (-not $cmd -or -not $cmd.Parameters.ContainsKey('EndpointDlpLocation')) {
+            Write-Warning "Skipping '$($cfg.Name)' — Endpoint DLP not available in this IPPS session (tenant not onboarded for device DLP, or required license missing)."
+            continue
+        }
     }
 
     # -------------------------------------------------------------------

@@ -115,7 +115,9 @@
       * Endpoint DLP (Devices), DLP for Defender for Cloud Apps,
         on-premises DLP scanner, Power BI DLP
     Also propagates to the DLP module so any custom workload added to
-    PurviewConfig.psd1 that requires E5 is rejected up-front.
+    PurviewConfig.psd1 that requires E5 is skipped rather than aborted.
+    When license auto-detect (see -NoLicenseAutoDetect) classifies the tenant
+    as BusinessPremium or Other, this switch is set automatically.
 
 .EXAMPLE
     # Standard partner-managed customer onboarding — SharePoint admin URL is
@@ -431,11 +433,21 @@ if ($wantGraphForAutoDetect) {
         'BusinessPremium' {
             Write-Host "  Detected: Microsoft 365 Business Premium." -ForegroundColor DarkGray
             Write-Host "  Container labels (E5 / Purview Suite feature) not auto-enabled." -ForegroundColor DarkGray
+            if (-not $BPOnly) {
+                $BPOnly = $true
+                Write-Host "  Auto-enabling -BPOnly: E5-only DLP workloads (Endpoint, MCAS, PowerBI, OnPrem) will be skipped." -ForegroundColor Yellow
+                Write-Host "  (To override, re-run with -NoLicenseAutoDetect.)" -ForegroundColor DarkGray
+            }
         }
         'Other' {
             $skuList = if ($tier.PartNumbers) { $tier.PartNumbers -join ', ' } else { '(none)' }
             Write-Host ("  Tenant SKUs: {0}" -f $skuList) -ForegroundColor DarkGray
             Write-Host "  No E5 / Purview Suite SKU detected; container labels not auto-enabled." -ForegroundColor DarkGray
+            if (-not $BPOnly) {
+                $BPOnly = $true
+                Write-Host "  Auto-enabling -BPOnly: no E5/Purview Suite SKU detected, E5-only DLP workloads will be skipped." -ForegroundColor Yellow
+                Write-Host "  (To override, re-run with -NoLicenseAutoDetect.)" -ForegroundColor DarkGray
+            }
         }
         default {
             Write-Host "  Could not classify tenant license tier." -ForegroundColor DarkYellow
