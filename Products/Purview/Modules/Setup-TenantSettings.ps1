@@ -81,6 +81,7 @@ function Test-TransientServerError {
         'temporarily unavailable',
         'throttl',
         'timeout',
+        'EnableSpoAipMigrationIsDisabledException',
         'A task was canceled'
     )
     foreach ($p in $patterns) {
@@ -178,13 +179,35 @@ if ($settings.EnableUnifiedAuditLog) {
         #   * -ErrorVariable capture
         # Bare invocation works. $ErrorActionPreference='Stop' is set at the
         # top of the file, so any real failure becomes a terminating exception
-        # we catch below. Post-state verification via Get-AdminAuditLogConfig
-        # is unreliable (eventual consistency — can return False for several
-        # minutes after a successful Set), so we trust no-exception = success.
+        # we catch below. Set-AdminAuditLogConfig has documented async propagation
+        # lag (no published SLA). The bounded polling loop below verifies within
+        # a short window. See inline comments for behavior detail.
         $auditSucceeded = $false
         try {
             Set-AdminAuditLogConfig -UnifiedAuditLogIngestionEnabled $true
-            Write-Host "      Enabled (propagation can take up to 60 minutes)." -ForegroundColor Green
+            # Verify the write took effect. Get-AdminAuditLogConfig is eventually
+            # consistent — can return False for several minutes after a successful Set.
+            # Poll briefly; if still False after all attempts, surface a Pending state
+            # so operators know to verify rather than silently assuming success.
+            $verifyAttempts = 5
+            $auditVerified  = $false
+            for ($va = 1; $va -le $verifyAttempts; $va++) {
+                try {
+                    $vCfg = Get-AdminAuditLogConfig -ErrorAction Stop
+                    if ($vCfg.UnifiedAuditLogIngestionEnabled) { $auditVerified = $true; break }
+                } catch { <# read failure is non-fatal here — keep polling #> }
+                if ($va -lt $verifyAttempts) {
+                    Write-Host ("      Audit config not confirmed yet (attempt $va/$verifyAttempts). Waiting 5s...") -ForegroundColor DarkYellow
+                    Start-Sleep -Seconds 5
+                }
+            }
+            if ($auditVerified) {
+                Write-Host "      Enabled and verified." -ForegroundColor Green
+            } else {
+                Write-Host "      Pending — audit configuration may still be applying (UnifiedAuditLogIngestionEnabled returned False after 20s)." -ForegroundColor Yellow
+                Write-Host "      To verify: Connect-ExchangeOnline; (Get-AdminAuditLogConfig).UnifiedAuditLogIngestionEnabled" -ForegroundColor DarkGray
+                Write-Host "      Expected on some tenants where IPPS propagation exceeds 20s — the Set call succeeded (no exception)." -ForegroundColor DarkGray
+            }
             $auditSucceeded = $true
         } catch {
             $err = $_
