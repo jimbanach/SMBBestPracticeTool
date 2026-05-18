@@ -1,3 +1,4 @@
+#requires -Version 7.0
 <#
 .SYNOPSIS
     Connects to all Microsoft 365 services required by the Purview Best Practice toolkit.
@@ -148,14 +149,6 @@ function Ensure-RequiredModule {
         Write-Host "        If install fails with an access-denied error, re-run PowerShell as Administrator." -ForegroundColor DarkGray
     }
 
-    $psg = Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue
-    $restoreUntrusted = $false
-    if ($psg -and $psg.InstallationPolicy -ne 'Trusted') {
-        try {
-            Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue
-            $restoreUntrusted = $true
-        } catch { }
-    }
 
     Write-Host "Installing '$Name' (Scope: CurrentUser)..." -ForegroundColor Cyan
     $installError = $null
@@ -163,10 +156,6 @@ function Ensure-RequiredModule {
         Install-Module -Name $Name -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
     } catch {
         $installError = $_
-    }
-
-    if ($restoreUntrusted) {
-        try { Set-PSRepository -Name PSGallery -InstallationPolicy Untrusted -ErrorAction SilentlyContinue } catch { }
     }
 
     if ($installError) {
@@ -293,6 +282,7 @@ if ($NeedsSharePoint) {
     if ($spoConnected) {
         Write-Host "SharePoint Online: existing session reused." -ForegroundColor DarkGray
     } else {
+        $spoViaWinPsProxy = $false
         $spoMod = Get-Module Microsoft.Online.SharePoint.PowerShell -ErrorAction SilentlyContinue
         if (-not $spoMod) {
             $spoMod = Get-Module Microsoft.Online.SharePoint.PowerShell -ListAvailable |
@@ -325,7 +315,8 @@ if ($NeedsSharePoint) {
                         -DisableNameChecking -WarningAction SilentlyContinue -ErrorAction Stop | Out-Null
                     Connect-SPOService -Url $SharePointAdminUrl -ErrorAction Stop
                     Write-Host "  Connected via Windows PowerShell proxy." -ForegroundColor Green
-                    $retried = $true
+                    $retried          = $true
+                    $spoViaWinPsProxy = $true
                 } catch {
                     $errMsg = "$errMsg`nFallback (UseWindowsPowerShell) also failed: $($_.Exception.Message)"
                 }
@@ -401,4 +392,5 @@ Write-Host "All required services connected." -ForegroundColor Green
 
 [pscustomobject]@{
     SharePointAdminUrl = $resolvedSpoUrl
+    SpoUsedWinPsProxy  = $spoViaWinPsProxy
 }

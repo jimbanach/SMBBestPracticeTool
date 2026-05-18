@@ -1,3 +1,4 @@
+#requires -Version 7.0
 <#
 .SYNOPSIS
     Creates a Microsoft Purview retention policy for Exchange mailboxes

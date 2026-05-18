@@ -222,7 +222,8 @@ The most common customisations:
   these are surfaced as `What if: ... would be created earlier in this run`
   notices with a placeholder GUID, so the preview is complete and never
   errors out. In apply mode the labels really are created in the right order.
-* `-Confirm` prompts for each high-impact change.
+* The toolkit runs in auto-confirm mode (`ConfirmImpact = 'None'`); `-Confirm`
+  has no effect. Use `-WhatIf` for a full dry-run preview.
 * The master script prints a preflight summary and asks for `y/N`
   confirmation before any change (skip with `-NonInteractive`).
 

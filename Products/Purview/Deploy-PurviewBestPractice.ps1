@@ -1,3 +1,4 @@
+#requires -Version 7.0
 <#
 .SYNOPSIS
     Deploys the Microsoft Purview Best Practice baseline for Microsoft 365
@@ -27,8 +28,8 @@
                                   Confidential). Provisioned only when
                                   -ApplyAIControls is supplied.
 
-    Default mode = APPLY changes. Pass -WhatIf for preview, or -Confirm for
-    per-action confirmation prompts.
+    Default mode = APPLY changes. Pass -WhatIf for preview (dry-run, no changes
+    written). The script runs in auto-confirm mode; -Confirm is not meaningful here.
 
 .PARAMETER TenantAdminUpn
     UPN of the tenant administrator (or partner GDAP admin) used for sign-in.
@@ -356,6 +357,7 @@ $connectionInfo = & $connectScript @connectArgs
 if ($connectionInfo -and $connectionInfo.SharePointAdminUrl) {
     $SharePointAdminUrl = $connectionInfo.SharePointAdminUrl
 }
+$spoUsedWinPsProxy = [bool]$connectionInfo.SpoUsedWinPsProxy
 
 # ---------------------------------------------------------------------------
 # License auto-detection (E5 / Purview Suite -> auto-enable Container labels)
@@ -450,6 +452,8 @@ if ($wantGraphForAutoDetect) {
 # ---------------------------------------------------------------------------
 $summary = [ordered]@{}
 
+try {
+
 if (-not $SkipTenantSettings) {
     Write-Host "`n--- [1/5] Tenant settings ---" -ForegroundColor White
     try {
@@ -534,6 +538,8 @@ if ($ApplyAIControls) {
     $summary['AI governance'] = 'Skipped (-ApplyAIControls not set)'
 }
 
+} finally {
+
 # ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
@@ -552,3 +558,8 @@ $summary.GetEnumerator() | ForEach-Object {
 Write-Host "==============================================================================" -ForegroundColor Cyan
 
 Write-Host "`nReminder: sensitivity-label and DLP changes can take up to 24 hours to fully propagate." -ForegroundColor DarkYellow
+
+if ($spoUsedWinPsProxy) {
+    Remove-Module Microsoft.Online.SharePoint.PowerShell -Force -ErrorAction SilentlyContinue
+}
+}

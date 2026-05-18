@@ -1,3 +1,4 @@
+#requires -Version 7.0
 <#
 .SYNOPSIS
     Applies foundational Microsoft Purview tenant settings.
@@ -252,8 +253,9 @@ if ($spoAvailable -and $settings.EnableAIPIntegrationInSPO) {
         if ($spoTenant.EnableAIPIntegration) {
             Write-Host "      Already enabled." -ForegroundColor DarkGray
         } elseif ($PSCmdlet.ShouldProcess('SharePoint Online', 'Enable AIP integration')) {
+            Write-Host "      Enabling AIP integration: allows SharePoint/OneDrive to apply sensitivity labels to files." -ForegroundColor DarkGray
             Invoke-WithTransientRetry -Description 'Set-SPOTenant -EnableAIPIntegration' -Action {
-                Set-SPOTenant -EnableAIPIntegration $true -WarningAction SilentlyContinue -ErrorAction Stop
+                Set-SPOTenant -EnableAIPIntegration $true -Confirm:$false -WarningAction SilentlyContinue -ErrorAction Stop
             } | Out-Null
             Write-Host "      Enabled." -ForegroundColor Green
         }
@@ -292,8 +294,9 @@ if ($spoAvailable -and $settings.EnableSensitivityLabelForPDF) {
         if ($current -eq $true) {
             Write-Host "      Already enabled." -ForegroundColor DarkGray
         } elseif ($PSCmdlet.ShouldProcess('SharePoint Online', 'Enable EnableSensitivityLabelforPDF')) {
+            Write-Host "      Enabling PDF sensitivity labels: allows labelling of PDF files in SharePoint/OneDrive." -ForegroundColor DarkGray
             try {
-                Set-SPOTenant -EnableSensitivityLabelforPDF $true -ErrorAction Stop -WarningAction SilentlyContinue
+                Set-SPOTenant -EnableSensitivityLabelforPDF $true -Confirm:$false -ErrorAction Stop -WarningAction SilentlyContinue
                 Write-Host "      Enabled." -ForegroundColor Green
             } catch {
                 Write-Warning "      Set-SPOTenant -EnableSensitivityLabelforPDF failed: $($_.Exception.Message). PDF labels may already be built-in for this tenant."

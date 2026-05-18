@@ -1,3 +1,4 @@
+#requires -Version 7.0
 <#
 .SYNOPSIS
     Creates Microsoft Purview DLP policies that block external sharing of
@@ -477,19 +478,21 @@ foreach ($cfg in $Config.DlpPolicies) {
             Comment                       = "$tag DLP rule for $($cfg.Workload)."
             ContentContainsSensitiveInformation = $contentMatch
             BlockAccess                   = $cfg.BlockAccess
-            BlockAccessScope              = $cfg.BlockAccessScope
             NotifyUser                    = $cfg.NotifyUser
             GenerateIncidentReport        = $cfg.GenerateIncidentReport
         }
 
-        # Workload-specific "external recipient / external sharing" condition
+        # Workload-specific "external recipient / external sharing" condition.
+        # BlockAccessScope is meaningful for SPO/ODFB only; Exchange uses
+        # AccessScope=NotInOrganization as its external condition.
         if ($cfg.Workload -eq 'Exchange') {
             # Block only when sent OUTSIDE the organisation
             $ruleArgs['AccessScope'] = 'NotInOrganization'
         } elseif ($cfg.Workload -eq 'SharePointOneDrive') {
             # Block external (anonymous + guest) access to the labelled file.
             # BlockAccessScope is taken from config ('All' | 'PerUser' | 'PerAnonymousUser').
-            $ruleArgs['AccessScope']   = 'NotInOrganization'
+            $ruleArgs['AccessScope']      = 'NotInOrganization'
+            $ruleArgs['BlockAccessScope'] = $cfg.BlockAccessScope
         }
     }
 
@@ -525,11 +528,13 @@ foreach ($cfg in $Config.DlpPolicies) {
                     Identity = $cfg.RuleName
                     Comment  = $ruleArgs.Comment
                     ContentContainsSensitiveInformation = $contentMatch
-                    BlockAccess      = $cfg.BlockAccess
-                    BlockAccessScope = $ruleArgs.BlockAccessScope
-                    NotifyUser       = $cfg.NotifyUser
+                    BlockAccess            = $cfg.BlockAccess
+                    NotifyUser             = $cfg.NotifyUser
                     GenerateIncidentReport = $cfg.GenerateIncidentReport
-                    AccessScope      = $ruleArgs.AccessScope
+                    AccessScope            = $ruleArgs.AccessScope
+                }
+                if ($cfg.Workload -ne 'Exchange') {
+                    $setArgs['BlockAccessScope'] = $ruleArgs.BlockAccessScope
                 }
             }
             $rerr = @()

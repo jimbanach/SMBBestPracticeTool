@@ -1,3 +1,4 @@
+#requires -Version 7.0
 <#
 .SYNOPSIS
     Creates and publishes Microsoft Purview sensitivity labels (SMB profile).
@@ -839,7 +840,7 @@ if (-not $parentsAlreadyCorrect -or -not $personalAlreadyAtZero) {
             Set-Label -Identity $obj.Name -Priority 0 `
                 -ErrorAction SilentlyContinue -ErrorVariable perr -WarningAction SilentlyContinue -Confirm:$false | Out-Null
             if ($perr.Count -gt 0) {
-                Write-Warning "    Priority update failed for '$($lbl.DisplayName)': $($(Format-IPPSError $perr[0]))"
+                throw "Label priority reorder failed for '$($lbl.DisplayName)': $($(Format-IPPSError $perr[0])). Label priority may be in inconsistent state — fix the error and re-run."
             }
         }
     }
@@ -856,7 +857,7 @@ if (-not $parentsAlreadyCorrect -or -not $personalAlreadyAtZero) {
             Set-Label -Identity $uObj.Name -Priority 0 `
                 -ErrorAction SilentlyContinue -ErrorVariable perr -WarningAction SilentlyContinue -Confirm:$false | Out-Null
             if ($perr.Count -gt 0) {
-                Write-Warning "    Priority update failed for unmanaged label '$($u.DisplayName)': $($(Format-IPPSError $perr[0]))"
+                throw "Label priority reorder failed for unmanaged label '$($u.DisplayName)': $($(Format-IPPSError $perr[0])). Re-run to retry."
             }
         }
     }

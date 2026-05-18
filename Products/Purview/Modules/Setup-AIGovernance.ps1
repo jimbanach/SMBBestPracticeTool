@@ -1,3 +1,4 @@
+#requires -Version 7.0
 <#
 .SYNOPSIS
     Creates Microsoft Purview DLP policies that govern AI interactions
@@ -263,38 +264,6 @@ function Build-CopilotAdvancedRuleJson {
           That is the shape the UI parser knows how to render. We mirror it
           exactly so script-created rules show up in the same wizard UI
           that admins use to inspect / hand-edit the policy.
-
-        Resulting JSON:
-          {
-            "Version": "1.0",
-            "Condition": {
-              "Operator": "And",
-              "SubConditions": [
-                {
-                  "ConditionName": "ContentContainsSensitiveInformation",
-                  "Value": [
-                    {
-                      "Groups": [
-                        {
-                          "Name": "Default",
-                          "Operator": "Or",
-                          "Labels": [
-                            { "Name": "<displayName>", "Id": "<guid>", "Type": "Sensitivity" }
-                          ]
-                        }
-                      ],
-                      "Operator": "And"
-                    }
-                  ]
-                }
-              ]
-            }
-          }
-
-        We assemble the JSON as a string rather than via ConvertTo-Json to
-        guarantee exact casing, property order, and array shape --
-        ConvertTo-Json has repeatedly proven unreliable for single-element
-        arrays here.
     #>
     param(
         [Parameter(Mandatory)]
@@ -308,42 +277,43 @@ function Build-CopilotAdvancedRuleJson {
         throw "Build-CopilotAdvancedRuleJson: at least one label must be supplied."
     }
 
-    $labelLines = @()
+    $advLabels = @()
     foreach ($l in $Labels) {
         if (-not $l.Name -or -not $l.Guid) {
             throw "Build-CopilotAdvancedRuleJson: label entry missing Name or Guid."
         }
-        $labelLines += "                          { ""Name"": ""$($l.Name)"", ""Id"": ""$($l.Guid)"", ""Type"": ""Sensitivity"" }"
+        $advLabels += [ordered]@{
+            Name = [string]$l.Name
+            Id   = [string]$l.Guid
+            Type = 'Sensitivity'
+        }
     }
-    $labelsBlock = $labelLines -join ",`n"
 
-    return @"
-{
-  "Version": "1.0",
-  "Condition": {
-    "Operator": "And",
-    "SubConditions": [
-      {
-        "ConditionName": "ContentContainsSensitiveInformation",
-        "Value": [
-          {
-            "Groups": [
-              {
-                "Name": "Default",
-                "Operator": "Or",
-                "Labels": [
-$labelsBlock
-                ]
-              }
-            ],
-            "Operator": "And"
-          }
-        ]
-      }
-    ]
-  }
-}
-"@
+    $rule = [ordered]@{
+        Version   = '1.0'
+        Condition = [ordered]@{
+            Operator      = 'And'
+            SubConditions = @(
+                [ordered]@{
+                    ConditionName = 'ContentContainsSensitiveInformation'
+                    Value = @(
+                        [ordered]@{
+                            Groups = @(
+                                [ordered]@{
+                                    Name     = 'Default'
+                                    Operator = 'Or'
+                                    Labels   = $advLabels
+                                }
+                            )
+                            Operator = 'And'
+                        }
+                    )
+                }
+            )
+        }
+    }
+
+    return $rule | ConvertTo-Json -Depth 20
 }
 
 # ---------------------------------------------------------------------------

@@ -265,9 +265,9 @@
                 'HighlyConfidential/HCInternalException'
             )
             BlockAccess = $true
-            # Exchange honours AccessScope=NotInOrganization (set in the script);
-            # BlockAccessScope is included for UI parity ("Block only people
-            # outside your organization" radio button).
+            # BlockAccessScope is meaningful for SPO/ODFB only; Setup-DLP.ps1
+            # omits it for Exchange rules. The value here is kept for config
+            # schema consistency (ignored at runtime for Exchange workloads).
             BlockAccessScope = 'PerUser'
             NotifyUser  = @('SiteAdmin','LastModifier','Owner')
             GenerateIncidentReport = @('SiteAdmin')
