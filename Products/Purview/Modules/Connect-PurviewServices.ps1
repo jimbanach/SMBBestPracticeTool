@@ -35,8 +35,8 @@
 
 .PARAMETER DelegatedOrganization
     Customer tenant primary domain (e.g. contoso.onmicrosoft.com) when a partner
-    is signing in via GDAP. Forwarded to Connect-ExchangeOnline and
-    Connect-IPPSSession.
+    is signing in via GDAP. Forwarded to Connect-ExchangeOnline,
+    Connect-IPPSSession, and Connect-MgGraph (-TenantId).
 
 .PARAMETER ConnectGraph
     Connect to Microsoft Graph (Beta). Required only when configuring container
@@ -366,11 +366,12 @@ if ($NeedsSharePoint) {
 # Microsoft Graph (Beta) — optional
 # ---------------------------------------------------------------------------
 if ($ConnectGraph) {
-    # Derive the target tenant from the admin UPN suffix. Connect-MgGraph
-    # accepts a verified domain (e.g. contoso.onmicrosoft.com) in -TenantId,
-    # which forces MSAL to authenticate against THIS tenant rather than
-    # whichever tenant happens to be cached from a prior session.
-    $targetTenantDomain = ($TenantAdminUpn -split '@')[-1]
+    # Derive the target tenant from -DelegatedOrganization (GDAP customer tenant)
+    # when set, otherwise from the admin UPN suffix. Connect-MgGraph accepts a
+    # verified domain (e.g. contoso.onmicrosoft.com) in -TenantId, which forces
+    # MSAL to authenticate against the correct tenant rather than whichever
+    # tenant happens to be cached from a prior session.
+    $targetTenantDomain = if ($DelegatedOrganization) { $DelegatedOrganization } else { ($TenantAdminUpn -split '@')[-1] }
     $graphConnected = $false
     try {
         $ctx = Get-MgContext -ErrorAction Stop
