@@ -75,9 +75,9 @@ Confidential
 ├─ Specific People                (footer only)
 └─ Internal Exception             (footer only)
 Highly Confidential               (watermark "HIGHLY CONFIDENTIAL")
-├─ All Employees                  (footer + ENCRYPTED, all employees)
+├─ All Employees                  (footer + ENCRYPTED, encrypted with broad scope)
 ├─ Specific People                (footer + ENCRYPTED, user picks who)
-└─ Internal Exception             (footer + ENCRYPTED, internal-only)
+└─ Internal Exception             (footer + ENCRYPTED, encrypted with broad scope)
 ```
 
 ### What gets published vs created
@@ -93,9 +93,11 @@ in [`PurviewConfig.psd1`](../Config/PurviewConfig.psd1) to surface more.
 ### Encryption — who can open the file?
 
 Only the **3 Highly Confidential sub-labels** apply encryption. The rights
-are granted to `AuthenticatedUsers` (every signed-in user in the tenant),
-which makes these labels effectively **internal-only** — files cannot leave
-the tenant.
+are granted to `AuthenticatedUsers` (includes all signed-in users in the
+tenant: employees, B2B guests, social/MSA accounts, and OTP users). Files can
+leave the tenant to the extent the encryption rights allow — and
+`AuthenticatedUsers` is broad enough that some external sharing is permitted
+by default.
 
 | Switch | Rights bundle | Office co-authoring | Programmatic access |
 |---|---|---|---|

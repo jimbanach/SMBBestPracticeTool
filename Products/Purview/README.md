@@ -24,7 +24,7 @@ Security Best Practice Deployment" guide for Business Premium.
 | # | Task                | Default state                                                                                                        |
 |---|---------------------|----------------------------------------------------------------------------------------------------------------------|
 | 1 | **Tenant settings** | Enables Unified Audit Log, SharePoint AIP integration, PDF labelling, label co-authoring                             |
-| 2 | **Sensitivity labels** | Creates `Personal`, `Public`, `General`, `Confidential` (with `AllEmployees` sub-label), `Highly Confidential`. Encryption applied to `Confidential`, `Confidential\AllEmployees`, and `Highly Confidential` (Co-Author rights for `AuthenticatedUsers` — internal-only). Labels ordered, then published with `General` as the default. |
+| 2 | **Sensitivity labels** | Creates `Personal`, `Public`, `General`, `Confidential` (with `AllEmployees` sub-label), `Highly Confidential`. Encryption applied to `Highly Confidential` and its sub-labels (Co-Author rights for `AuthenticatedUsers`). Labels ordered, then published with `General` as the default. |
 | 3 | **DLP policies**    | Two policies (per Microsoft guidance): one for Exchange and one for SharePoint + OneDrive. Both block external sharing of content labelled `Confidential\AllEmployees`. Match condition uses the label **GUID**, not the display name. |
 | 4 | **Retention**       | Exchange mailbox retention — keep 2 years, then delete (measured from item creation). |
 
@@ -230,23 +230,29 @@ The most common customisations:
 
 ## Encryption rights — what `AuthenticatedUsers` means
 
-`Confidential`, `Confidential\AllEmployees`, and `Highly Confidential` apply
-encryption with these usage rights to the special identity
-`AuthenticatedUsers`:
+Only the **3 Highly Confidential sub-labels** apply encryption. The rights are
+granted to the special identity `AuthenticatedUsers`. This identity includes
+all signed-in users in the tenant: internal employees, B2B guests, social/MSA
+accounts, and one-time-passcode (OTP) users. It does **not** restrict to
+internal employees only.
 
 ```
-VIEW, VIEWRIGHTSDATA, DOCEDIT, EDIT, PRINT, EXTRACT, REPLY, REPLYALL,
-FORWARD, OBJMODEL
+Reviewer:   VIEW, VIEWRIGHTSDATA, EDIT, DOCEDIT, REPLY, REPLYALL, FORWARD
+Co-Author:  (above) + EXTRACT, PRINT, OBJMODEL
 ```
 
-This bundle equates to **Co-Author** in the Microsoft documentation. Because
-the identity is `AuthenticatedUsers`, **only authenticated users in the
-customer tenant can open these files** — meeting the deck's "internal-only"
-requirement.
+If you need to restrict encryption to internal employees only, operators must:
 
-Want a different protection scope (e.g. specific group, partner domain)?
-Edit `EncryptionRightsDefinitions` in `PurviewConfig.psd1`. Validate in a
-pilot tenant before rolling out.
+1. Define a Microsoft 365 group in Entra ID with a membership rule
+   scoped to `user.userType -eq "Member"` (excludes guests)
+2. Replace `AuthenticatedUsers` in the `EncryptionRightsDefinitions` and
+   `EncryptionRightsDefinitionsCoAuth` config entries in `PurviewConfig.psd1`
+   with the group's SMTP address (e.g., `internal-users@contoso.onmicrosoft.com`)
+
+> ⚠️ **Important:** Guests who currently have access to content labeled with
+> `Highly Confidential` will retain access for approximately 30 days after the
+> encryption scope is narrowed, until their cached use-licenses expire. To
+> immediately revoke access, use the Purview portal to force use-license revocation.
 
 ---
 

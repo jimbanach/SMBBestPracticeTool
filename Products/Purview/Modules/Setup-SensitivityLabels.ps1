@@ -456,8 +456,10 @@ function Set-LabelEncryption {
         Two protection modes are supported:
 
           * 'Template' (default) — admin-defined template that grants the
-            configured rights ($rights) to AuthenticatedUsers. Used for the
-            "All Employees" sub-labels in Microsoft's default-labels spec.
+            configured rights ($rights) to AuthenticatedUsers (includes B2B
+            guests, social/MSA, and OTP users). For internal-only scope, use
+            a security group's SMTP address instead. Used for the "All
+            Employees" sub-labels in Microsoft's default-labels spec.
 
           * 'UserDefined' — the user picks recipients and permissions at apply
             time. Used for the "Trusted People" / "Specific People" sub-labels.
