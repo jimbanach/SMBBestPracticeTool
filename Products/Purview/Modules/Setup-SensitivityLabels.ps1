@@ -789,7 +789,13 @@ foreach ($lbl in $Config.Labels) {
 }
 $allTopLevel = @(Get-Label -ErrorAction SilentlyContinue | Where-Object { -not $_.ParentId })
 $unmanagedTopLevel = @($allTopLevel | Where-Object { $configuredDisplayNamesEarly -notcontains $_.DisplayName })
-$unmanagedCount = $unmanagedTopLevel.Count
+# Count total priority slots occupied by unmanaged labels (top-level + their sub-labels).
+# Each sub-label of an unmanaged parent occupies its own integer in the flat global priority space.
+$unmanagedSlotCount = 0
+foreach ($u in $unmanagedTopLevel) {
+    $unmanagedSlotCount++
+    $unmanagedSlotCount += @($allLabels | Where-Object { $_.ParentId -eq $u.Guid }).Count
+}
 
 # Build pin-order: 'Personal' FIRST (so it gets pushed LAST in reverse
 # iteration and lands at slot 0), then any other unmanaged labels.
@@ -800,10 +806,10 @@ if ($personalLbl.Count -gt 0)    { $pinOrder += $personalLbl[0] }
 if ($otherUnmanaged.Count -gt 0) { $pinOrder += $otherUnmanaged }
 
 # Compute the expected GLOBAL priority for each top-level config label.
-# Slots 0..unmanagedCount-1 are reserved for unmanaged labels (Personal
-# at 0); config labels start at $unmanagedCount.
+# Slots 0..unmanagedSlotCount-1 are reserved for unmanaged labels (Personal
+# at 0); config labels start at $unmanagedSlotCount.
 $expectedParentPriority = @{}
-$cursor = $unmanagedCount
+$cursor = $unmanagedSlotCount
 foreach ($lbl in $Config.Labels) {
     $expectedParentPriority[$lbl.DisplayName] = $cursor
     $cursor++
@@ -865,8 +871,8 @@ if (-not $parentsAlreadyCorrect -or -not $personalAlreadyAtZero) {
 # Phase B — sub-label reorder within each parent's block
 foreach ($lbl in $Config.Labels) {
     if (-not $lbl.SubLabels -or $lbl.SubLabels.Count -eq 0) { continue }
-    # Re-fetch parent to pick up any priority shift from Phase A
-    $parentObj = Get-LabelByName -Name $lbl.Name -DisplayName $lbl.DisplayName
+    # Live fetch from IPPS — $allLabels is stale after Phase A Set-Label moves
+    $parentObj = Get-Label -Identity $lbl.Name -ErrorAction SilentlyContinue
     if (-not $parentObj) { continue }
     $firstChildSlot = [int]$parentObj.Priority + 1
 
