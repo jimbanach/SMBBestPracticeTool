@@ -839,12 +839,11 @@ if (-not $parentsAlreadyCorrect -or -not $personalAlreadyAtZero) {
         $lbl = $Config.Labels[$i]
         $obj = Get-Label -Identity $lbl.Name -ErrorAction SilentlyContinue
         if (-not $obj) { continue }
-        if ([int]$obj.Priority -eq 0) { continue }   # already at slot 0; Set 0 would be rejected
         if ($PSCmdlet.ShouldProcess($obj.Name, "Set priority=0 (top-level reorder)")) {
             $perr = @()
             Set-Label -Identity $obj.Name -Priority 0 `
                 -ErrorAction SilentlyContinue -ErrorVariable perr -WarningAction SilentlyContinue -Confirm:$false | Out-Null
-            if ($perr.Count -gt 0) {
+            if ($perr.Count -gt 0 -and (Format-IPPSError $perr[0]) -notmatch 'not a valid priority|is not valid') {
                 Write-Warning "    Priority update failed for '$($lbl.DisplayName)': $($(Format-IPPSError $perr[0]))"
             }
         }
@@ -856,12 +855,11 @@ if (-not $parentsAlreadyCorrect -or -not $personalAlreadyAtZero) {
         $u = $pinOrder[$i]
         $uObj = Get-Label -Identity $u.Name -ErrorAction SilentlyContinue
         if (-not $uObj) { continue }
-        if ($uObj.Priority -eq 0) { continue }
         if ($PSCmdlet.ShouldProcess($uObj.Name, "Set priority=0 (pin unmanaged label)")) {
             $perr = @()
             Set-Label -Identity $uObj.Name -Priority 0 `
                 -ErrorAction SilentlyContinue -ErrorVariable perr -WarningAction SilentlyContinue -Confirm:$false | Out-Null
-            if ($perr.Count -gt 0) {
+            if ($perr.Count -gt 0 -and (Format-IPPSError $perr[0]) -notmatch 'not a valid priority|is not valid') {
                 Write-Warning "    Priority update failed for unmanaged label '$($u.DisplayName)': $($(Format-IPPSError $perr[0]))"
             }
         }
@@ -891,12 +889,11 @@ foreach ($lbl in $Config.Labels) {
         $sub = $lbl.SubLabels[$i]
         $subObj = Get-Label -Identity $sub.Name -ErrorAction SilentlyContinue
         if (-not $subObj) { continue }
-        if ([int]$subObj.Priority -eq $firstChildSlot) { continue }   # already at first slot in block
         if ($PSCmdlet.ShouldProcess($subObj.Name, "Set priority=$firstChildSlot (sub-label reorder)")) {
             $sperr = @()
             Set-Label -Identity $subObj.Name -Priority $firstChildSlot `
                 -ErrorAction SilentlyContinue -ErrorVariable sperr -WarningAction SilentlyContinue -Confirm:$false | Out-Null
-            if ($sperr.Count -gt 0) {
+            if ($sperr.Count -gt 0 -and (Format-IPPSError $sperr[0]) -notmatch 'not a valid priority|is not valid') {
                 Write-Warning "    Priority update failed for '$($sub.DisplayName)': $($(Format-IPPSError $sperr[0]))"
             }
         }
