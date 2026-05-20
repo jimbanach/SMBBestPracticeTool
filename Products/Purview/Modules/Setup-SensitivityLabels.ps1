@@ -819,9 +819,9 @@ foreach ($lbl in $Config.Labels) {
 # Pre-check: are config parents already in the right slots AND is Personal at 0?
 $parentsAlreadyCorrect = $true
 foreach ($lbl in $Config.Labels) {
-    $obj = Get-LabelByName -Name $lbl.Name -DisplayName $lbl.DisplayName
+    $obj = Get-Label -Identity $lbl.Name -ErrorAction SilentlyContinue
     if (-not $obj) { continue }
-    if ($obj.Priority -ne $expectedParentPriority[$lbl.DisplayName]) {
+    if ([int]$obj.Priority -ne $expectedParentPriority[$lbl.DisplayName]) {
         $parentsAlreadyCorrect = $false
         break
     }
@@ -837,9 +837,9 @@ if (-not $parentsAlreadyCorrect -or -not $personalAlreadyAtZero) {
     # Config.Labels[0] at slot 0, Config.Labels[1] at slot 1, ...
     for ($i = $Config.Labels.Count - 1; $i -ge 0; $i--) {
         $lbl = $Config.Labels[$i]
-        $obj = Get-LabelByName -Name $lbl.Name -DisplayName $lbl.DisplayName
+        $obj = Get-Label -Identity $lbl.Name -ErrorAction SilentlyContinue
         if (-not $obj) { continue }
-        if ($obj.Priority -eq 0) { continue }   # already at slot 0; Set 0 would be rejected
+        if ([int]$obj.Priority -eq 0) { continue }   # already at slot 0; Set 0 would be rejected
         if ($PSCmdlet.ShouldProcess($obj.Name, "Set priority=0 (top-level reorder)")) {
             $perr = @()
             Set-Label -Identity $obj.Name -Priority 0 `
@@ -871,26 +871,27 @@ if (-not $parentsAlreadyCorrect -or -not $personalAlreadyAtZero) {
 # Phase B — sub-label reorder within each parent's block
 foreach ($lbl in $Config.Labels) {
     if (-not $lbl.SubLabels -or $lbl.SubLabels.Count -eq 0) { continue }
-    # Live fetch from IPPS — $allLabels is stale after Phase A Set-Label moves
+    # Live fetch parent existence from IPPS; expected slot math is more reliable than
+    # live priority reads immediately after Phase A Set-Label moves.
     $parentObj = Get-Label -Identity $lbl.Name -ErrorAction SilentlyContinue
     if (-not $parentObj) { continue }
-    $firstChildSlot = [int]$parentObj.Priority + 1
+    $firstChildSlot = [int]$expectedParentPriority[$lbl.DisplayName] + 1
 
     # Pre-check: are the sub-labels already in config order?
     $childrenCorrect = $true
     $expectedSlot = $firstChildSlot
     foreach ($sub in $lbl.SubLabels) {
-        $subObj = Get-LabelByName -Name $sub.Name -DisplayName $sub.DisplayName -ParentId $parentObj.Guid
-        if (-not $subObj -or $subObj.Priority -ne $expectedSlot) { $childrenCorrect = $false; break }
+        $subObj = Get-Label -Identity $sub.Name -ErrorAction SilentlyContinue
+        if (-not $subObj -or [int]$subObj.Priority -ne $expectedSlot) { $childrenCorrect = $false; break }
         $expectedSlot++
     }
     if ($childrenCorrect) { continue }
 
     for ($i = $lbl.SubLabels.Count - 1; $i -ge 0; $i--) {
         $sub = $lbl.SubLabels[$i]
-        $subObj = Get-LabelByName -Name $sub.Name -DisplayName $sub.DisplayName -ParentId $parentObj.Guid
+        $subObj = Get-Label -Identity $sub.Name -ErrorAction SilentlyContinue
         if (-not $subObj) { continue }
-        if ($subObj.Priority -eq $firstChildSlot) { continue }   # already at first slot in block
+        if ([int]$subObj.Priority -eq $firstChildSlot) { continue }   # already at first slot in block
         if ($PSCmdlet.ShouldProcess($subObj.Name, "Set priority=$firstChildSlot (sub-label reorder)")) {
             $sperr = @()
             Set-Label -Identity $subObj.Name -Priority $firstChildSlot `
