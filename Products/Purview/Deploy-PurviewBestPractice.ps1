@@ -395,13 +395,25 @@ function Get-TenantPurviewLicenseTier {
 
     # Headline SKUs that grant container-label rights (Group.Unified EnableMIPLabels)
     $e5Sku = @(
-        'SPE_E5','SPE_E5_NOPSTNCONF',
+        # M365 E5 family (incl. unbundled-Teams and calling variants)
+        'SPE_E5','SPE_E5_NOPSTNCONF','SPE_E5_CALLINGMINUTES',
+        'SPE_E5_USGOV_GCCHIGH',
+        'Microsoft_365_E5_(no_Teams)',
+        'Microsoft_365_E5_EEA_(no_Teams)_with_Calling_Minutes',
+        'Microsoft_365_E5_EEA_(no_Teams)_without_Audio_Conferencing',
+        # Office 365 E5 family
         'ENTERPRISEPREMIUM','ENTERPRISEPREMIUM_NOPSTNCONF',
+        # E5 Compliance / Purview Suite (enterprise add-ons)
         'INFORMATION_PROTECTION_COMPLIANCE',
         'IDENTITY_THREAT_PROTECTION',
         'M365_E5_SUITE_COMPONENTS',
         'Microsoft_Purview_Suite',
-        'INFORMATION_PROTECTION_AND_GOVERNANCE'
+        'INFORMATION_PROTECTION_AND_GOVERNANCE',
+        # Purview Suite for Business Premium (Sept 2025 add-ons)
+        'PURVIEW_SUITE_FOR_BUSINESS_PREMIUM',
+        'PURVIEW_SUITE_FOR_BUSINESS_PREMIUM_NEW',
+        'DEFENDER_AND_PURVIEW_SUITES_FOR_BUSINESS_PREMIUM',
+        'DEFENDER_AND_PURVIEW_SUITES_FOR_BUSINESS_PREMIUM_NEW'
     )
     $matched = @($partNumbers | Where-Object { $_ -in $e5Sku })
     if ($matched.Count -gt 0) {
@@ -410,9 +422,16 @@ function Get-TenantPurviewLicenseTier {
         return $result
     }
 
-    if ($partNumbers -contains 'SPB' -or $partNumbers -contains 'BUSINESS_PREMIUM') {
+    $bpSku = @(
+        'SPB','BUSINESS_PREMIUM',
+        'Microsoft_365_ Business_ Premium_(no Teams)',
+        'Office_365_w/o_Teams_Bundle_Business_Premium',
+        'Microsoft_365_Business_Premium_Donation_(Non_Profit_Pricing)'
+    )
+    $bpMatched = @($partNumbers | Where-Object { $_ -in $bpSku })
+    if ($bpMatched.Count -gt 0) {
         $result.Tier = 'BusinessPremium'
-        $result.PartNumbers = @($partNumbers | Where-Object { $_ -in 'SPB','BUSINESS_PREMIUM' })
+        $result.PartNumbers = $bpMatched
         return $result
     }
 
