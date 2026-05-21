@@ -255,7 +255,12 @@ if ($spoAvailable -and $settings.EnableAIPIntegrationInSPO) {
         } elseif ($PSCmdlet.ShouldProcess('SharePoint Online', 'Enable AIP integration')) {
             Write-Host "      Enabling AIP integration: allows SharePoint/OneDrive to apply sensitivity labels to files." -ForegroundColor DarkGray
             Invoke-WithTransientRetry -Description 'Set-SPOTenant -EnableAIPIntegration' -Action {
-                Set-SPOTenant -EnableAIPIntegration $true -Confirm:$false -WarningAction SilentlyContinue -ErrorAction Stop
+                # Set-SPOTenant does not declare SupportsShouldProcess; -Confirm is not a
+                # valid parameter (would throw "A parameter cannot be found"). The cmdlet's
+                # inline Y/N prompt is the SPO module's own confirmation, not PowerShell's
+                # standard ShouldProcess. Suppress it via $ConfirmPreference scope override.
+                $ConfirmPreference = 'None'
+                Set-SPOTenant -EnableAIPIntegration $true -WarningAction SilentlyContinue -ErrorAction Stop
             } | Out-Null
             Write-Host "      Enabled." -ForegroundColor Green
         }
@@ -296,7 +301,9 @@ if ($spoAvailable -and $settings.EnableSensitivityLabelForPDF) {
         } elseif ($PSCmdlet.ShouldProcess('SharePoint Online', 'Enable EnableSensitivityLabelforPDF')) {
             Write-Host "      Enabling PDF sensitivity labels: allows labelling of PDF files in SharePoint/OneDrive." -ForegroundColor DarkGray
             try {
-                Set-SPOTenant -EnableSensitivityLabelforPDF $true -Confirm:$false -ErrorAction Stop -WarningAction SilentlyContinue
+                # See note above re: $ConfirmPreference vs invalid -Confirm parameter.
+                $ConfirmPreference = 'None'
+                Set-SPOTenant -EnableSensitivityLabelforPDF $true -ErrorAction Stop -WarningAction SilentlyContinue
                 Write-Host "      Enabled." -ForegroundColor Green
             } catch {
                 Write-Warning "      Set-SPOTenant -EnableSensitivityLabelforPDF failed: $($_.Exception.Message). PDF labels may already be built-in for this tenant."
