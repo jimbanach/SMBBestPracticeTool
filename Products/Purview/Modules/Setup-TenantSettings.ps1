@@ -185,15 +185,34 @@ if ($settings.EnableUnifiedAuditLog) {
         $auditSucceeded = $false
         try {
             Set-AdminAuditLogConfig -UnifiedAuditLogIngestionEnabled $true
-            # Verify the write took effect. Get-AdminAuditLogConfig is eventually
-            # consistent — can return False for several minutes after a successful Set.
-            # Poll briefly; if still False after all attempts, surface a Pending state
-            # so operators know to verify rather than silently assuming success.
+            # Verify the write took effect. Both EXO and IPPS expose
+            # Get-AdminAuditLogConfig, but only EXO exposes Set, and IPPS's
+            # Get shadows EXO's when it's imported later (which our connect
+            # order does). Reading bare Get-AdminAuditLogConfig returns IPPS's
+            # view — a different value than what EXO Set persisted. Resolve
+            # the Get from the same module that exposes Set so the verify
+            # reads from the same session we wrote to.
+            $setCmd = Get-Command Set-AdminAuditLogConfig -ErrorAction SilentlyContinue
+            $exoGet = $null
+            if ($setCmd) {
+                $exoGet = Get-Command Get-AdminAuditLogConfig -All -ErrorAction SilentlyContinue |
+                            Where-Object { $_.Source -eq $setCmd.Source } |
+                            Select-Object -First 1
+            }
+            if (-not $exoGet) {
+                # Fallback: bare resolution. Less reliable but better than crashing.
+                $exoGet = Get-Command Get-AdminAuditLogConfig -ErrorAction SilentlyContinue
+            }
+
+            # Get-AdminAuditLogConfig is eventually consistent — can return False
+            # briefly after a successful Set. Poll briefly; if still False after
+            # all attempts, surface a Pending state so operators know to verify
+            # rather than silently assuming success.
             $verifyAttempts = 5
             $auditVerified  = $false
             for ($va = 1; $va -le $verifyAttempts; $va++) {
                 try {
-                    $vCfg = Get-AdminAuditLogConfig -ErrorAction Stop
+                    $vCfg = & $exoGet -ErrorAction Stop
                     if ($vCfg.UnifiedAuditLogIngestionEnabled) { $auditVerified = $true; break }
                 } catch { <# read failure is non-fatal here — keep polling #> }
                 if ($va -lt $verifyAttempts) {
